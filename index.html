@@ -878,6 +878,17 @@
                 return this.queueRequest(`${this.baseUrl}?${params}`);
             }
 
+            async searchByAuthor(authorName, maxResults = 10) {
+                const params = new URLSearchParams({
+                    search_query: `au:${authorName}`,
+                    max_results: maxResults.toString(),
+                    sortBy: 'submittedDate',
+                    sortOrder: 'descending'
+                });
+
+                return this.queueRequest(`${this.baseUrl}?${params}`);
+            }
+
             async getByCategory(category, maxResults = 50) {
                 const params = new URLSearchParams({
                     search_query: `cat:${category}`,
@@ -1708,7 +1719,7 @@
 
             async getAuthorPaperCount(authorName, index) {
                 try {
-                    const count = await this.arxivAPI.getResultCount(`au:"${authorName}"`);
+                    const count = await this.arxivAPI.getResultCount(`au:${authorName}`);
                     const el = document.getElementById(`authorCount${index}`);
                     if (el && count > 0) {
                         el.textContent = `(${count})`;
@@ -1730,7 +1741,7 @@
                 container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.75rem; padding: 0.5rem 0;">Loading...</p>';
 
                 try {
-                    const results = await this.arxivAPI.search(`au:"${authorName}"`, 0, 10);
+                    const results = await this.arxivAPI.searchByAuthor(authorName, 10);
 
                     if (results.length > 0) {
                         container.innerHTML = results.map(p => `
