@@ -361,6 +361,11 @@
             background: var(--border);
         }
 
+        .author-count {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+        }
+
         .author-item {
             margin-bottom: 0.25rem;
         }
@@ -902,6 +907,23 @@
                 });
 
                 return this.queueRequest(`${this.baseUrl}?${params}`);
+            }
+
+            async getResultCount(query) {
+                const params = new URLSearchParams({
+                    search_query: query,
+                    max_results: '1'
+                });
+
+                const url = `${this.baseUrl}?${params}`;
+                const proxiedUrl = this.proxyUrl + encodeURIComponent(url);
+                const response = await fetch(proxiedUrl);
+                const text = await response.text();
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(text, 'text/xml');
+                const totalResults = doc.querySelector('totalResults');
+                return totalResults ? parseInt(totalResults.textContent) : 0;
             }
 
             queueRequest(url) {
@@ -1648,7 +1670,9 @@
                 const authorsContainer = document.getElementById('detailAuthors');
                 authorsContainer.innerHTML = (paper.authors || []).map((author, i) =>
                     `<div class="author-item">
-                        <div class="detail-author" data-author="${author}" data-index="${i}">${author}</div>
+                        <div class="detail-author" data-author="${author}" data-index="${i}">
+                            ${author} <span class="author-count" id="authorCount${i}"></span>
+                        </div>
                         <div class="author-papers" id="authorPapers${i}"></div>
                     </div>`
                 ).join('');
@@ -1656,6 +1680,11 @@
                 // Author click handler - load papers inline
                 authorsContainer.querySelectorAll('.detail-author').forEach(el => {
                     el.addEventListener('click', () => this.loadAuthorPapers(el.dataset.author, el.dataset.index));
+                });
+
+                // Fetch paper counts for each author
+                (paper.authors || []).forEach((author, i) => {
+                    this.getAuthorPaperCount(author, i);
                 });
 
                 document.getElementById('categoriesSection').style.display = 'block';
@@ -1675,6 +1704,18 @@
                 const newBtn = similarBtn.cloneNode(true);
                 similarBtn.parentNode.replaceChild(newBtn, similarBtn);
                 newBtn.addEventListener('click', () => this.findSimilarPapers(paper));
+            }
+
+            async getAuthorPaperCount(authorName, index) {
+                try {
+                    const count = await this.arxivAPI.getResultCount(`au:"${authorName}"`);
+                    const el = document.getElementById(`authorCount${index}`);
+                    if (el && count > 0) {
+                        el.textContent = `(${count})`;
+                    }
+                } catch (e) {
+                    // Silently fail - count is optional
+                }
             }
 
             async loadAuthorPapers(authorName, index) {
