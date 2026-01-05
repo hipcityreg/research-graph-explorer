@@ -234,45 +234,6 @@
             font-size: 0.875rem;
         }
 
-        /* Empty state */
-        .empty-state {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 1.5rem;
-            padding: 2rem;
-            text-align: center;
-        }
-
-        .empty-state.hidden {
-            display: none;
-        }
-
-        .empty-icon {
-            font-size: 3rem;
-            opacity: 0.3;
-        }
-
-        .empty-title {
-            font-size: 1.25rem;
-            font-weight: 500;
-        }
-
-        .empty-desc {
-            color: var(--text-dim);
-            max-width: 400px;
-            line-height: 1.6;
-        }
-
-        .empty-actions {
-            display: flex;
-            gap: 1rem;
-            margin-top: 0.5rem;
-        }
-
         .action-btn {
             padding: 0.75rem 1.5rem;
             background: var(--surface);
@@ -550,17 +511,6 @@
                 <svg id="graphSvg"></svg>
 
                 <div class="filter-bar hidden" id="filterBar"></div>
-
-                <div class="empty-state" id="emptyState">
-                    <div class="empty-icon">🔬</div>
-                    <h2 class="empty-title">Explore Research Connections</h2>
-                    <p class="empty-desc">
-                        Search for papers using the arXiv API to explore citation networks, author collaborations, and topic relationships.
-                    </p>
-                    <div class="empty-actions">
-                        <button class="action-btn primary" id="loadSampleBtn">Load Sample Data</button>
-                    </div>
-                </div>
 
                 <div class="loading-overlay" id="loadingOverlay">
                     <div class="spinner"></div>
@@ -1305,7 +1255,9 @@
                 this.graphEngine = new GraphEngine(document.getElementById('graphContainer'));
 
                 this.setupEventListeners();
-                this.updateStatus('Ready');
+
+                // Auto-load recent papers on startup
+                this.loadRecentPapers();
             }
 
             setupEventListeners() {
@@ -1341,9 +1293,6 @@
                 document.getElementById('zoomOutBtn').addEventListener('click', () => this.graphEngine.zoomOut());
                 document.getElementById('resetBtn').addEventListener('click', () => this.graphEngine.resetView());
                 document.getElementById('exportBtn').addEventListener('click', () => this.graphEngine.exportPNG());
-
-                // Load sample button
-                document.getElementById('loadSampleBtn').addEventListener('click', () => this.loadSampleData());
 
                 // Node selection
                 document.getElementById('graphContainer').addEventListener('nodeselect', (e) => {
@@ -1442,7 +1391,6 @@
                     this.papers = results;
                     this.buildGraphFromPapers(results);
                     this.hideLoading();
-                    this.hideEmptyState();
                     this.updateStatus(`Found ${results.length} papers`);
                 } catch (error) {
                     console.error('Search error:', error);
@@ -1626,26 +1574,26 @@
                 this.graphEngine.setData(nodes, links);
             }
 
-            async loadSampleData() {
-                this.showLoading('Fetching sample data from arXiv...');
+            async loadRecentPapers() {
+                this.showLoading('Fetching recent papers from arXiv...');
 
                 try {
-                    // Fetch recent ML papers
-                    const papers = await this.arxivAPI.getByCategory('cs.LG', 50);
+                    // Fetch most recent papers across key CS categories
+                    const papers = await this.arxivAPI.getByCategory('cs', 50);
 
                     if (papers.length > 0) {
+                        this.papers = papers;
                         await this.dataStore.addPapers(papers);
                         this.hideLoading();
-                        this.hideEmptyState();
                         this.loadViewData();
-                        this.updateStatus(`Loaded ${papers.length} papers`);
+                        this.updateStatus(`Loaded ${papers.length} recent papers`);
                     } else {
                         throw new Error('No papers returned');
                     }
                 } catch (error) {
-                    console.error('Sample data error:', error);
+                    console.error('Load error:', error);
                     this.hideLoading();
-                    this.updateStatus('Failed to fetch sample data', true);
+                    this.updateStatus('Failed to fetch papers', true);
                 }
             }
 
@@ -1804,10 +1752,6 @@
                 ).join('');
 
                 document.getElementById('linkSection').style.display = 'none';
-            }
-
-            hideEmptyState() {
-                document.getElementById('emptyState').classList.add('hidden');
             }
 
             showLoading(text = 'Loading...') {
