@@ -860,7 +860,7 @@
         class ArxivAPI {
             constructor() {
                 this.baseUrl = 'https://export.arxiv.org/api/query';
-                this.proxyUrl = 'https://api.allorigins.win/raw?url=';
+                this.proxyUrl = 'https://corsproxy.io/?';
                 this.requestQueue = [];
                 this.isProcessing = false;
                 this.rateLimit = 3000; // 3 seconds between requests
@@ -890,9 +890,9 @@
             }
 
             async getRecent(maxResults = 50) {
-                // Query recent papers from popular CS subcategories
+                // Query recent ML papers
                 const params = new URLSearchParams({
-                    search_query: 'cat:cs.LG OR cat:cs.AI OR cat:cs.CL OR cat:cs.CV OR cat:cs.NE',
+                    search_query: 'cat:cs.LG',
                     max_results: maxResults.toString(),
                     sortBy: 'submittedDate',
                     sortOrder: 'descending'
