@@ -873,6 +873,18 @@
                 return this.queueRequest(`${this.baseUrl}?${params}`);
             }
 
+            async getRecent(maxResults = 50) {
+                // Query recent papers from popular CS subcategories
+                const params = new URLSearchParams({
+                    search_query: 'cat:cs.LG OR cat:cs.AI OR cat:cs.CL OR cat:cs.CV OR cat:cs.NE',
+                    max_results: maxResults.toString(),
+                    sortBy: 'submittedDate',
+                    sortOrder: 'descending'
+                });
+
+                return this.queueRequest(`${this.baseUrl}?${params}`);
+            }
+
             async getById(id) {
                 const params = new URLSearchParams({
                     id_list: id
@@ -1579,7 +1591,7 @@
 
                 try {
                     // Fetch most recent papers across key CS categories
-                    const papers = await this.arxivAPI.getByCategory('cs', 50);
+                    const papers = await this.arxivAPI.getRecent(50);
 
                     if (papers.length > 0) {
                         this.papers = papers;
