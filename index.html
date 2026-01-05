@@ -361,6 +361,16 @@
             background: var(--border);
         }
 
+        .author-item {
+            margin-bottom: 0.25rem;
+        }
+
+        .author-papers {
+            margin-left: 0.5rem;
+            border-left: 1px solid var(--border);
+            padding-left: 0.5rem;
+        }
+
         .detail-link {
             display: inline-block;
             padding: 0.5rem 1rem;
@@ -1636,18 +1646,16 @@
 
                 document.getElementById('authorsSection').style.display = 'block';
                 const authorsContainer = document.getElementById('detailAuthors');
-                authorsContainer.innerHTML = (paper.authors || []).map(author =>
-                    `<div class="detail-author" data-author="${author}">${author}</div>`
+                authorsContainer.innerHTML = (paper.authors || []).map((author, i) =>
+                    `<div class="author-item">
+                        <div class="detail-author" data-author="${author}" data-index="${i}">${author}</div>
+                        <div class="author-papers" id="authorPapers${i}"></div>
+                    </div>`
                 ).join('');
 
-                // Author click handler
+                // Author click handler - load papers inline
                 authorsContainer.querySelectorAll('.detail-author').forEach(el => {
-                    el.addEventListener('click', () => {
-                        document.querySelector('[data-view="authors"]').click();
-                        setTimeout(() => {
-                            this.search(el.dataset.author);
-                        }, 100);
-                    });
+                    el.addEventListener('click', () => this.loadAuthorPapers(el.dataset.author, el.dataset.index));
                 });
 
                 document.getElementById('categoriesSection').style.display = 'block';
@@ -1667,6 +1675,35 @@
                 const newBtn = similarBtn.cloneNode(true);
                 similarBtn.parentNode.replaceChild(newBtn, similarBtn);
                 newBtn.addEventListener('click', () => this.findSimilarPapers(paper));
+            }
+
+            async loadAuthorPapers(authorName, index) {
+                const container = document.getElementById(`authorPapers${index}`);
+
+                // Toggle - if already showing, hide it
+                if (container.innerHTML) {
+                    container.innerHTML = '';
+                    return;
+                }
+
+                container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.75rem; padding: 0.5rem 0;">Loading...</p>';
+
+                try {
+                    const results = await this.arxivAPI.search(`au:"${authorName}"`, 0, 10);
+
+                    if (results.length > 0) {
+                        container.innerHTML = results.map(p => `
+                            <a href="https://arxiv.org/abs/${p.id}" target="_blank" class="detail-connection" style="text-decoration: none; color: inherit; font-size: 0.75rem; padding: 0.5rem 0.75rem;">
+                                <span>${p.title.slice(0, 45)}${p.title.length > 45 ? '...' : ''}</span>
+                                <span class="detail-connection-count">${p.year || ''}</span>
+                            </a>
+                        `).join('');
+                    } else {
+                        container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.75rem; padding: 0.5rem 0;">No papers found</p>';
+                    }
+                } catch (error) {
+                    container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.75rem; padding: 0.5rem 0;">Search failed</p>';
+                }
             }
 
             async findSimilarPapers(paper) {
