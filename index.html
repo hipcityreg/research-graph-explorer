@@ -152,6 +152,49 @@
             background: var(--border);
         }
 
+        /* Category filters */
+        .filter-bar {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            right: 1rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            z-index: 10;
+        }
+
+        .filter-bar.hidden {
+            display: none;
+        }
+
+        .filter-btn {
+            padding: 0.375rem 0.75rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            border-color: #444;
+            color: var(--text);
+        }
+
+        .filter-btn.active {
+            background: var(--node-paper);
+            border-color: var(--node-paper);
+            color: var(--bg);
+        }
+
+        .filter-btn.clear {
+            background: transparent;
+            border-style: dashed;
+        }
+
         /* Loading overlay */
         .loading-overlay {
             position: absolute;
@@ -506,6 +549,8 @@
             <div class="graph-container" id="graphContainer">
                 <svg id="graphSvg"></svg>
 
+                <div class="filter-bar hidden" id="filterBar"></div>
+
                 <div class="empty-state" id="emptyState">
                     <div class="empty-icon">🔬</div>
                     <h2 class="empty-title">Explore Research Connections</h2>
@@ -565,6 +610,10 @@
 
                     <div class="detail-section" id="linkSection">
                         <a href="#" class="detail-link" id="detailLink" target="_blank">View on arXiv →</a>
+                    </div>
+
+                    <div class="detail-section" id="similarSection">
+                        <button class="action-btn primary" id="findSimilarBtn" style="width: 100%;">See more like this</button>
                     </div>
                 </div>
             </aside>
@@ -691,23 +740,46 @@
 
             getCategoryName(id) {
                 const categories = {
-                    'cs.AI': 'Artificial Intelligence',
+                    // Computer Science
+                    'cs.AI': 'AI',
                     'cs.LG': 'Machine Learning',
-                    'cs.CL': 'Computation and Language',
+                    'cs.CL': 'NLP',
                     'cs.CV': 'Computer Vision',
-                    'cs.NE': 'Neural and Evolutionary Computing',
+                    'cs.NE': 'Neural Networks',
                     'cs.RO': 'Robotics',
-                    'stat.ML': 'Machine Learning (Statistics)',
-                    'physics.comp-ph': 'Computational Physics',
-                    'math.OC': 'Optimization and Control',
-                    'q-bio': 'Quantitative Biology',
-                    'eess.SP': 'Signal Processing',
-                    'cs.CR': 'Cryptography and Security',
+                    'cs.CR': 'Security',
                     'cs.DB': 'Databases',
-                    'cs.DC': 'Distributed Computing',
-                    'cs.HC': 'Human-Computer Interaction',
+                    'cs.DC': 'Distributed Systems',
+                    'cs.HC': 'HCI',
                     'cs.IR': 'Information Retrieval',
-                    'cs.SE': 'Software Engineering'
+                    'cs.SE': 'Software Engineering',
+                    'cs.DS': 'Data Structures',
+                    'cs.GT': 'Game Theory',
+                    'cs.IT': 'Information Theory',
+                    'cs.MA': 'Multi-Agent Systems',
+                    'cs.NI': 'Networking',
+                    'cs.PL': 'Programming Languages',
+                    'cs.SI': 'Social Networks',
+                    'cs.SY': 'Systems & Control',
+                    // Statistics
+                    'stat.ML': 'Statistical ML',
+                    'stat.TH': 'Statistics Theory',
+                    'stat.ME': 'Methodology',
+                    // Math
+                    'math.OC': 'Optimization',
+                    'math.ST': 'Math Statistics',
+                    'math.NA': 'Numerical Analysis',
+                    // Physics
+                    'physics.comp-ph': 'Computational Physics',
+                    'quant-ph': 'Quantum Physics',
+                    'cond-mat': 'Condensed Matter',
+                    // Other
+                    'eess.SP': 'Signal Processing',
+                    'eess.AS': 'Audio & Speech',
+                    'eess.IV': 'Image & Video',
+                    'q-bio': 'Quantitative Biology',
+                    'q-bio.NC': 'Neuroscience',
+                    'econ.EM': 'Econometrics'
                 };
                 return categories[id] || id;
             }
@@ -1222,6 +1294,7 @@
                 this.graphEngine = null;
                 this.currentView = 'citations';
                 this.papers = [];
+                this.activeFilters = new Set();
 
                 this.init();
             }
@@ -1233,13 +1306,6 @@
 
                 this.setupEventListeners();
                 this.updateStatus('Ready');
-
-                // Check if we have existing data
-                const stats = await this.dataStore.getStats();
-                if (stats.papers > 0) {
-                    this.hideEmptyState();
-                    this.loadViewData();
-                }
             }
 
             setupEventListeners() {
@@ -1250,6 +1316,15 @@
                         tab.classList.add('active');
                         this.currentView = tab.dataset.view;
                         this.graphEngine.setView(this.currentView);
+
+                        // Show/hide filter bar based on view
+                        const filterBar = document.getElementById('filterBar');
+                        if (this.currentView === 'citations' && this.papers.length > 0) {
+                            filterBar.classList.remove('hidden');
+                        } else {
+                            filterBar.classList.add('hidden');
+                        }
+
                         this.loadViewData();
                     });
                 });
@@ -1274,6 +1349,70 @@
                 document.getElementById('graphContainer').addEventListener('nodeselect', (e) => {
                     this.showDetail(e.detail);
                 });
+            }
+
+            buildFilterBar(papers) {
+                const filterBar = document.getElementById('filterBar');
+
+                // Get unique categories from papers
+                const categories = new Map();
+                papers.forEach(p => {
+                    (p.categories || []).forEach(cat => {
+                        categories.set(cat, (categories.get(cat) || 0) + 1);
+                    });
+                });
+
+                // Sort by count and take top categories
+                const sortedCats = [...categories.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 12);
+
+                if (sortedCats.length === 0) {
+                    filterBar.classList.add('hidden');
+                    return;
+                }
+
+                // Build filter buttons with readable names
+                filterBar.innerHTML = `
+                    <button class="filter-btn clear" data-action="clear">Clear all</button>
+                    ${sortedCats.map(([cat, count]) => `
+                        <button class="filter-btn ${this.activeFilters.has(cat) ? 'active' : ''}"
+                                data-category="${cat}">${this.dataStore.getCategoryName(cat)} (${count})</button>
+                    `).join('')}
+                `;
+
+                // Add event listeners
+                filterBar.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        if (btn.dataset.action === 'clear') {
+                            this.activeFilters.clear();
+                            filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                        } else {
+                            const cat = btn.dataset.category;
+                            if (this.activeFilters.has(cat)) {
+                                this.activeFilters.delete(cat);
+                                btn.classList.remove('active');
+                            } else {
+                                this.activeFilters.add(cat);
+                                btn.classList.add('active');
+                            }
+                        }
+                        this.applyFilters();
+                    });
+                });
+
+                filterBar.classList.remove('hidden');
+            }
+
+            applyFilters() {
+                if (this.activeFilters.size === 0) {
+                    this.buildGraphFromPapers(this.papers);
+                } else {
+                    const filtered = this.papers.filter(p =>
+                        (p.categories || []).some(cat => this.activeFilters.has(cat))
+                    );
+                    this.buildGraphFromPapers(filtered, false);
+                }
             }
 
             async search(query) {
@@ -1312,21 +1451,18 @@
                 }
             }
 
-            async loadViewData() {
-                const stats = await this.dataStore.getStats();
-                if (stats.papers === 0) return;
+            loadViewData() {
+                if (this.papers.length === 0) return;
 
                 this.showLoading('Loading...');
 
                 try {
                     if (this.currentView === 'citations') {
-                        const papers = await this.dataStore.searchPapers('', 100);
-                        this.papers = papers;
-                        this.buildGraphFromPapers(papers);
+                        this.buildGraphFromPapers(this.papers);
                     } else if (this.currentView === 'authors') {
-                        await this.buildAuthorGraph();
+                        this.buildAuthorGraph();
                     } else {
-                        await this.buildTopicGraph();
+                        this.buildTopicGraph();
                     }
 
                     this.hideLoading();
@@ -1337,7 +1473,12 @@
                 }
             }
 
-            buildGraphFromPapers(papers) {
+            buildGraphFromPapers(papers, rebuildFilters = true) {
+                // Build filter bar from all papers (not filtered subset)
+                if (rebuildFilters) {
+                    this.buildFilterBar(this.papers);
+                }
+
                 const nodes = papers.map(p => ({
                     id: p.id,
                     title: p.title,
@@ -1392,55 +1533,70 @@
                 this.graphEngine.setData(nodes, links);
             }
 
-            async buildAuthorGraph() {
-                const authors = await this.dataStore.getAllAuthors();
-                const topAuthors = authors
-                    .sort((a, b) => b.paperCount - a.paperCount)
-                    .slice(0, 80);
+            buildAuthorGraph() {
+                // Build authors directly from loaded papers
+                const authorCounts = new Map();
 
-                const nodes = topAuthors.map(a => ({
-                    id: a.name,
-                    name: a.name,
-                    paperCount: a.paperCount,
+                this.papers.forEach(paper => {
+                    (paper.authors || []).forEach(author => {
+                        authorCounts.set(author, (authorCounts.get(author) || 0) + 1);
+                    });
+                });
+
+                const topAuthors = [...authorCounts.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 60);
+
+                const nodes = topAuthors.map(([name, count]) => ({
+                    id: name,
+                    name: name,
+                    paperCount: count,
                     type: 'author'
                 }));
 
                 // Build collaboration links
                 const links = [];
                 const authorNames = new Set(nodes.map(n => n.name));
+                const seenLinks = new Set();
 
-                for (const author of topAuthors) {
-                    const papers = await this.dataStore.getPapersByAuthor(author.name);
-
-                    for (const paper of papers) {
-                        for (const coauthor of paper.authors) {
-                            if (coauthor !== author.name && authorNames.has(coauthor)) {
-                                // Avoid duplicate links
-                                const existing = links.find(l =>
-                                    (l.source === author.name && l.target === coauthor) ||
-                                    (l.source === coauthor && l.target === author.name)
-                                );
-                                if (!existing) {
-                                    links.push({ source: author.name, target: coauthor });
-                                }
+                this.papers.forEach(paper => {
+                    const authors = (paper.authors || []).filter(a => authorNames.has(a));
+                    for (let i = 0; i < authors.length; i++) {
+                        for (let j = i + 1; j < authors.length; j++) {
+                            const key = [authors[i], authors[j]].sort().join('|');
+                            if (!seenLinks.has(key)) {
+                                seenLinks.add(key);
+                                links.push({ source: authors[i], target: authors[j] });
                             }
                         }
                     }
-                }
+                });
 
                 this.graphEngine.setData(nodes, links);
             }
 
-            async buildTopicGraph() {
-                const categories = await this.dataStore.getAllCategories();
+            buildTopicGraph() {
+                // Build categories directly from loaded papers
+                const categoryCounts = new Map();
+                const categoryPapers = new Map();
 
-                const nodes = categories
-                    .sort((a, b) => b.paperCount - a.paperCount)
-                    .slice(0, 40)
-                    .map(c => ({
-                        id: c.id,
-                        name: c.name || c.id,
-                        paperCount: c.paperCount,
+                this.papers.forEach(paper => {
+                    (paper.categories || []).forEach(cat => {
+                        categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
+                        if (!categoryPapers.has(cat)) {
+                            categoryPapers.set(cat, []);
+                        }
+                        categoryPapers.get(cat).push(paper);
+                    });
+                });
+
+                const nodes = [...categoryCounts.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 30)
+                    .map(([id, count]) => ({
+                        id,
+                        name: this.dataStore.getCategoryName(id),
+                        paperCount: count,
                         type: 'category'
                     }));
 
@@ -1449,22 +1605,19 @@
                 const catIds = new Set(nodes.map(n => n.id));
                 const linkCounts = {};
 
-                for (const cat of nodes) {
-                    const papers = await this.dataStore.getPapersByCategory(cat.id);
-
-                    for (const paper of papers) {
-                        for (const otherCat of paper.categories) {
-                            if (otherCat !== cat.id && catIds.has(otherCat)) {
-                                const key = [cat.id, otherCat].sort().join('|');
-                                linkCounts[key] = (linkCounts[key] || 0) + 1;
-                            }
+                this.papers.forEach(paper => {
+                    const cats = (paper.categories || []).filter(c => catIds.has(c));
+                    for (let i = 0; i < cats.length; i++) {
+                        for (let j = i + 1; j < cats.length; j++) {
+                            const key = [cats[i], cats[j]].sort().join('|');
+                            linkCounts[key] = (linkCounts[key] || 0) + 1;
                         }
                     }
-                }
+                });
 
                 // Create links for categories that share papers
                 for (const [key, count] of Object.entries(linkCounts)) {
-                    if (count >= 2) {
+                    if (count >= 1) {
                         const [source, target] = key.split('|');
                         links.push({ source, target, weight: count });
                     }
@@ -1545,6 +1698,62 @@
 
                 document.getElementById('linkSection').style.display = 'block';
                 document.getElementById('detailLink').href = `https://arxiv.org/abs/${paper.id}`;
+
+                // "See more like this" button
+                document.getElementById('similarSection').style.display = 'block';
+                const similarBtn = document.getElementById('findSimilarBtn');
+                const newBtn = similarBtn.cloneNode(true);
+                similarBtn.parentNode.replaceChild(newBtn, similarBtn);
+                newBtn.addEventListener('click', () => this.findSimilarPapers(paper));
+            }
+
+            async findSimilarPapers(paper) {
+                this.showLoading('Finding similar papers...');
+
+                try {
+                    // Build search query from title keywords and categories
+                    const titleWords = paper.title
+                        .toLowerCase()
+                        .replace(/[^a-z0-9\s]/g, '')
+                        .split(/\s+/)
+                        .filter(w => w.length > 4)
+                        .slice(0, 5)
+                        .join(' ');
+
+                    const category = paper.categories?.[0] || 'cs.LG';
+                    const searchQuery = `${titleWords}`;
+
+                    this.updateStatus('Searching arXiv for similar papers...');
+                    const results = await this.arxivAPI.search(searchQuery, 0, 30);
+
+                    if (results.length > 0) {
+                        // Filter out the original paper
+                        const filtered = results.filter(p => p.id !== paper.id);
+                        await this.dataStore.addPapers(filtered);
+
+                        // Add to current papers and rebuild
+                        this.papers = [...this.papers, ...filtered];
+                        // Remove duplicates
+                        const seen = new Set();
+                        this.papers = this.papers.filter(p => {
+                            if (seen.has(p.id)) return false;
+                            seen.add(p.id);
+                            return true;
+                        });
+
+                        this.activeFilters.clear();
+                        this.buildGraphFromPapers(this.papers);
+                        this.hideLoading();
+                        this.updateStatus(`Found ${filtered.length} similar papers`);
+                    } else {
+                        this.hideLoading();
+                        this.updateStatus('No similar papers found');
+                    }
+                } catch (error) {
+                    console.error('Similar search error:', error);
+                    this.hideLoading();
+                    this.updateStatus('Search failed', true);
+                }
             }
 
             async showAuthorDetail(author) {
@@ -1555,6 +1764,7 @@
                 document.getElementById('abstractSection').style.display = 'none';
                 document.getElementById('authorsSection').style.display = 'none';
                 document.getElementById('categoriesSection').style.display = 'none';
+                document.getElementById('similarSection').style.display = 'none';
 
                 document.getElementById('connectionsSection').style.display = 'block';
                 document.getElementById('connectionsSectionTitle').textContent = 'Papers';
@@ -1579,6 +1789,7 @@
                 document.getElementById('abstractSection').style.display = 'none';
                 document.getElementById('authorsSection').style.display = 'none';
                 document.getElementById('categoriesSection').style.display = 'none';
+                document.getElementById('similarSection').style.display = 'none';
 
                 document.getElementById('connectionsSection').style.display = 'block';
                 document.getElementById('connectionsSectionTitle').textContent = 'Recent Papers';
