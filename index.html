@@ -564,6 +564,7 @@
 
                     <div class="detail-section" id="similarSection">
                         <button class="action-btn primary" id="findSimilarBtn" style="width: 100%;">See more like this</button>
+                        <div class="detail-connections" id="similarResults" style="margin-top: 1rem;"></div>
                     </div>
                 </div>
             </aside>
@@ -1661,6 +1662,7 @@
 
                 // "See more like this" button
                 document.getElementById('similarSection').style.display = 'block';
+                document.getElementById('similarResults').innerHTML = '';
                 const similarBtn = document.getElementById('findSimilarBtn');
                 const newBtn = similarBtn.cloneNode(true);
                 similarBtn.parentNode.replaceChild(newBtn, similarBtn);
@@ -1668,10 +1670,15 @@
             }
 
             async findSimilarPapers(paper) {
-                this.showLoading('Finding similar papers...');
+                const btn = document.getElementById('findSimilarBtn');
+                const resultsContainer = document.getElementById('similarResults');
+
+                btn.textContent = 'Searching...';
+                btn.disabled = true;
+                resultsContainer.innerHTML = '';
 
                 try {
-                    // Build search query from title keywords and categories
+                    // Build search query from title keywords
                     const titleWords = paper.title
                         .toLowerCase()
                         .replace(/[^a-z0-9\s]/g, '')
@@ -1680,40 +1687,29 @@
                         .slice(0, 5)
                         .join(' ');
 
-                    const category = paper.categories?.[0] || 'cs.LG';
-                    const searchQuery = `${titleWords}`;
+                    const results = await this.arxivAPI.search(titleWords, 0, 15);
 
-                    this.updateStatus('Searching arXiv for similar papers...');
-                    const results = await this.arxivAPI.search(searchQuery, 0, 30);
+                    // Filter out the original paper
+                    const filtered = results.filter(p => p.id !== paper.id).slice(0, 10);
 
-                    if (results.length > 0) {
-                        // Filter out the original paper
-                        const filtered = results.filter(p => p.id !== paper.id);
-                        await this.dataStore.addPapers(filtered);
-
-                        // Add to current papers and rebuild
-                        this.papers = [...this.papers, ...filtered];
-                        // Remove duplicates
-                        const seen = new Set();
-                        this.papers = this.papers.filter(p => {
-                            if (seen.has(p.id)) return false;
-                            seen.add(p.id);
-                            return true;
-                        });
-
-                        this.activeFilters.clear();
-                        this.buildGraphFromPapers(this.papers);
-                        this.hideLoading();
+                    if (filtered.length > 0) {
+                        resultsContainer.innerHTML = filtered.map(p => `
+                            <a href="https://arxiv.org/abs/${p.id}" target="_blank" class="detail-connection" style="text-decoration: none; color: inherit;">
+                                <span>${p.title.slice(0, 50)}${p.title.length > 50 ? '...' : ''}</span>
+                                <span class="detail-connection-count">${p.year || ''}</span>
+                            </a>
+                        `).join('');
                         this.updateStatus(`Found ${filtered.length} similar papers`);
                     } else {
-                        this.hideLoading();
-                        this.updateStatus('No similar papers found');
+                        resultsContainer.innerHTML = '<p style="color: var(--text-dim); font-size: 0.8125rem;">No similar papers found</p>';
                     }
                 } catch (error) {
                     console.error('Similar search error:', error);
-                    this.hideLoading();
-                    this.updateStatus('Search failed', true);
+                    resultsContainer.innerHTML = '<p style="color: var(--text-dim); font-size: 0.8125rem;">Search failed</p>';
                 }
+
+                btn.textContent = 'See more like this';
+                btn.disabled = false;
             }
 
             async showAuthorDetail(author) {
