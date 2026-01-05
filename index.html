@@ -1,0 +1,1621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Graph Explorer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0a0a0a;
+            --surface: #141414;
+            --border: #2a2a2a;
+            --text: #e8e8e8;
+            --text-dim: #888;
+            --accent: #fff;
+            --node-paper: #4a9eff;
+            --node-author: #ff6b6b;
+            --node-topic: #4ecdc4;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+
+        .logo {
+            font-size: 1.125rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        .search-container {
+            flex: 1;
+            max-width: 500px;
+            margin: 0 2rem;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 0.625rem 1rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.875rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #444;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-dim);
+        }
+
+        .view-tabs {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .view-tab {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-dim);
+            font-size: 0.8125rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .view-tab:hover {
+            border-color: #444;
+            color: var(--text);
+        }
+
+        .view-tab.active {
+            background: var(--text);
+            border-color: var(--text);
+            color: var(--bg);
+        }
+
+        /* Main content */
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            overflow: hidden;
+        }
+
+        /* Graph container */
+        .graph-container {
+            position: relative;
+            overflow: hidden;
+            background: var(--bg);
+        }
+
+        .graph-container svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .graph-controls {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .graph-btn {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .graph-btn:hover {
+            background: var(--border);
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(10, 10, 10, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 2px solid var(--border);
+            border-top-color: var(--text);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: var(--text-dim);
+            font-size: 0.875rem;
+        }
+
+        /* Empty state */
+        .empty-state {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .empty-state.hidden {
+            display: none;
+        }
+
+        .empty-icon {
+            font-size: 3rem;
+            opacity: 0.3;
+        }
+
+        .empty-title {
+            font-size: 1.25rem;
+            font-weight: 500;
+        }
+
+        .empty-desc {
+            color: var(--text-dim);
+            max-width: 400px;
+            line-height: 1.6;
+        }
+
+        .empty-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .action-btn {
+            padding: 0.75rem 1.5rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .action-btn:hover {
+            background: var(--border);
+        }
+
+        .action-btn.primary {
+            background: var(--text);
+            border-color: var(--text);
+            color: var(--bg);
+        }
+
+        .action-btn.primary:hover {
+            background: #ccc;
+        }
+
+        /* Detail panel */
+        .detail-panel {
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        .detail-empty {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim);
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .detail-content {
+            display: none;
+        }
+
+        .detail-content.visible {
+            display: block;
+        }
+
+        .detail-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .detail-type {
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        .detail-title {
+            font-size: 1.125rem;
+            font-weight: 500;
+            line-height: 1.4;
+            margin-bottom: 0.75rem;
+        }
+
+        .detail-meta {
+            font-size: 0.8125rem;
+            color: var(--text-dim);
+        }
+
+        .detail-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .detail-section-title {
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin-bottom: 0.75rem;
+        }
+
+        .detail-abstract {
+            font-size: 0.875rem;
+            line-height: 1.7;
+            color: var(--text);
+        }
+
+        .detail-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .detail-tag {
+            padding: 0.25rem 0.625rem;
+            background: var(--bg);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .detail-authors {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .detail-author {
+            padding: 0.5rem 0.75rem;
+            background: var(--bg);
+            border-radius: 4px;
+            font-size: 0.8125rem;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .detail-author:hover {
+            background: var(--border);
+        }
+
+        .detail-link {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text);
+            text-decoration: none;
+            font-size: 0.8125rem;
+            transition: all 0.2s ease;
+        }
+
+        .detail-link:hover {
+            background: var(--border);
+        }
+
+        .detail-connections {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .detail-connection {
+            padding: 0.625rem 0.75rem;
+            background: var(--bg);
+            border-radius: 4px;
+            font-size: 0.8125rem;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .detail-connection:hover {
+            background: var(--border);
+        }
+
+        .detail-connection-count {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+        }
+
+        /* Footer status */
+        .footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem 1rem;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #4ecdc4;
+        }
+
+        .status-dot.offline {
+            background: #ff6b6b;
+        }
+
+        /* Graph nodes and links */
+        .node {
+            cursor: pointer;
+        }
+
+        .node circle {
+            stroke: var(--bg);
+            stroke-width: 2px;
+            transition: r 0.2s ease;
+        }
+
+        .node:hover circle {
+            stroke: var(--accent);
+        }
+
+        .node.selected circle {
+            stroke: var(--accent);
+            stroke-width: 3px;
+        }
+
+        .node text {
+            font-size: 10px;
+            fill: var(--text);
+            pointer-events: none;
+            opacity: 0.8;
+        }
+
+        .link {
+            stroke: var(--border);
+            stroke-opacity: 0.6;
+            fill: none;
+        }
+
+        .link.highlighted {
+            stroke: var(--accent);
+            stroke-opacity: 1;
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: absolute;
+            padding: 0.5rem 0.75rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 1000;
+            max-width: 250px;
+        }
+
+        .tooltip.visible {
+            opacity: 1;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="logo">Research Graph Explorer</div>
+            <div class="search-container">
+                <input type="text" class="search-input" id="searchInput" placeholder="Search papers, authors, or topics...">
+            </div>
+            <div class="view-tabs">
+                <button class="view-tab active" data-view="citations">Citations</button>
+                <button class="view-tab" data-view="authors">Authors</button>
+                <button class="view-tab" data-view="topics">Topics</button>
+            </div>
+        </header>
+
+        <main class="main">
+            <div class="graph-container" id="graphContainer">
+                <svg id="graphSvg"></svg>
+
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">🔬</div>
+                    <h2 class="empty-title">Explore Research Connections</h2>
+                    <p class="empty-desc">
+                        Search for papers using the arXiv API to explore citation networks, author collaborations, and topic relationships.
+                    </p>
+                    <div class="empty-actions">
+                        <button class="action-btn primary" id="loadSampleBtn">Load Sample Data</button>
+                    </div>
+                </div>
+
+                <div class="loading-overlay" id="loadingOverlay">
+                    <div class="spinner"></div>
+                    <div class="loading-text" id="loadingText">Loading...</div>
+                </div>
+
+                <div class="graph-controls">
+                    <button class="graph-btn" id="zoomInBtn" title="Zoom in">+</button>
+                    <button class="graph-btn" id="zoomOutBtn" title="Zoom out">−</button>
+                    <button class="graph-btn" id="resetBtn" title="Reset view">⟲</button>
+                    <button class="graph-btn" id="exportBtn" title="Export graph">↓</button>
+                </div>
+
+                <div class="tooltip" id="tooltip"></div>
+            </div>
+
+            <aside class="detail-panel" id="detailPanel">
+                <div class="detail-empty" id="detailEmpty">
+                    <p>Select a node to view details</p>
+                </div>
+                <div class="detail-content" id="detailContent">
+                    <div class="detail-header">
+                        <div class="detail-type" id="detailType">Paper</div>
+                        <h2 class="detail-title" id="detailTitle">Paper Title</h2>
+                        <div class="detail-meta" id="detailMeta">2024 • cs.AI</div>
+                    </div>
+
+                    <div class="detail-section" id="abstractSection">
+                        <div class="detail-section-title">Abstract</div>
+                        <p class="detail-abstract" id="detailAbstract"></p>
+                    </div>
+
+                    <div class="detail-section" id="authorsSection">
+                        <div class="detail-section-title">Authors</div>
+                        <div class="detail-authors" id="detailAuthors"></div>
+                    </div>
+
+                    <div class="detail-section" id="categoriesSection">
+                        <div class="detail-section-title">Categories</div>
+                        <div class="detail-tags" id="detailCategories"></div>
+                    </div>
+
+                    <div class="detail-section" id="connectionsSection">
+                        <div class="detail-section-title" id="connectionsSectionTitle">Connections</div>
+                        <div class="detail-connections" id="detailConnections"></div>
+                    </div>
+
+                    <div class="detail-section" id="linkSection">
+                        <a href="#" class="detail-link" id="detailLink" target="_blank">View on arXiv →</a>
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <footer class="footer">
+            <div class="status-item">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Ready</span>
+            </div>
+            <div class="status-item">
+                <span id="nodeCount">0 nodes</span> • <span id="edgeCount">0 edges</span>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // ============================================
+        // IndexedDB Data Layer
+        // ============================================
+        class DataStore {
+            constructor() {
+                this.db = null;
+                this.dbName = 'ResearchGraphDB';
+                this.dbVersion = 1;
+            }
+
+            async init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, this.dbVersion);
+
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => {
+                        this.db = request.result;
+                        resolve();
+                    };
+
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+
+                        // Papers store
+                        if (!db.objectStoreNames.contains('papers')) {
+                            const papersStore = db.createObjectStore('papers', { keyPath: 'id' });
+                            papersStore.createIndex('title', 'title', { unique: false });
+                            papersStore.createIndex('categories', 'categories', { unique: false, multiEntry: true });
+                            papersStore.createIndex('authors', 'authors', { unique: false, multiEntry: true });
+                            papersStore.createIndex('year', 'year', { unique: false });
+                        }
+
+                        // Authors store
+                        if (!db.objectStoreNames.contains('authors')) {
+                            const authorsStore = db.createObjectStore('authors', { keyPath: 'name' });
+                            authorsStore.createIndex('paperCount', 'paperCount', { unique: false });
+                        }
+
+                        // Categories store
+                        if (!db.objectStoreNames.contains('categories')) {
+                            db.createObjectStore('categories', { keyPath: 'id' });
+                        }
+                    };
+                });
+            }
+
+            async addPapers(papers) {
+                const tx = this.db.transaction(['papers', 'authors', 'categories'], 'readwrite');
+                const papersStore = tx.objectStore('papers');
+                const authorsStore = tx.objectStore('authors');
+                const categoriesStore = tx.objectStore('categories');
+
+                const authorPaperCounts = {};
+                const categoryPaperCounts = {};
+
+                for (const paper of papers) {
+                    // Normalize paper data
+                    const normalizedPaper = {
+                        id: paper.id,
+                        title: paper.title,
+                        abstract: paper.abstract || paper.summary || '',
+                        authors: paper.authors || [],
+                        categories: paper.categories || [],
+                        year: paper.year || (paper.update_date ? parseInt(paper.update_date.slice(0, 4)) : null),
+                        citations: paper.citations || [],
+                        references: paper.references || [],
+                        doi: paper.doi || null
+                    };
+
+                    await papersStore.put(normalizedPaper);
+
+                    // Track author paper counts
+                    for (const author of normalizedPaper.authors) {
+                        authorPaperCounts[author] = (authorPaperCounts[author] || 0) + 1;
+                    }
+
+                    // Track category paper counts
+                    for (const cat of normalizedPaper.categories) {
+                        categoryPaperCounts[cat] = (categoryPaperCounts[cat] || 0) + 1;
+                    }
+                }
+
+                // Update author records
+                for (const [name, count] of Object.entries(authorPaperCounts)) {
+                    const existing = await authorsStore.get(name);
+                    await authorsStore.put({
+                        name,
+                        paperCount: (existing?.paperCount || 0) + count
+                    });
+                }
+
+                // Update category records
+                for (const [id, count] of Object.entries(categoryPaperCounts)) {
+                    const existing = await categoriesStore.get(id);
+                    await categoriesStore.put({
+                        id,
+                        name: this.getCategoryName(id),
+                        paperCount: (existing?.paperCount || 0) + count
+                    });
+                }
+
+                return new Promise((resolve, reject) => {
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+
+            getCategoryName(id) {
+                const categories = {
+                    'cs.AI': 'Artificial Intelligence',
+                    'cs.LG': 'Machine Learning',
+                    'cs.CL': 'Computation and Language',
+                    'cs.CV': 'Computer Vision',
+                    'cs.NE': 'Neural and Evolutionary Computing',
+                    'cs.RO': 'Robotics',
+                    'stat.ML': 'Machine Learning (Statistics)',
+                    'physics.comp-ph': 'Computational Physics',
+                    'math.OC': 'Optimization and Control',
+                    'q-bio': 'Quantitative Biology',
+                    'eess.SP': 'Signal Processing',
+                    'cs.CR': 'Cryptography and Security',
+                    'cs.DB': 'Databases',
+                    'cs.DC': 'Distributed Computing',
+                    'cs.HC': 'Human-Computer Interaction',
+                    'cs.IR': 'Information Retrieval',
+                    'cs.SE': 'Software Engineering'
+                };
+                return categories[id] || id;
+            }
+
+            async getPaper(id) {
+                const tx = this.db.transaction('papers', 'readonly');
+                const store = tx.objectStore('papers');
+                return store.get(id);
+            }
+
+            async searchPapers(query, limit = 50) {
+                const tx = this.db.transaction('papers', 'readonly');
+                const store = tx.objectStore('papers');
+                const results = [];
+                const queryLower = query.toLowerCase();
+
+                return new Promise((resolve) => {
+                    store.openCursor().onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        if (cursor && results.length < limit) {
+                            const paper = cursor.value;
+                            if (paper.title.toLowerCase().includes(queryLower) ||
+                                paper.abstract.toLowerCase().includes(queryLower) ||
+                                paper.authors.some(a => a.toLowerCase().includes(queryLower))) {
+                                results.push(paper);
+                            }
+                            cursor.continue();
+                        } else {
+                            resolve(results);
+                        }
+                    };
+                });
+            }
+
+            async getPapersByAuthor(authorName) {
+                const tx = this.db.transaction('papers', 'readonly');
+                const store = tx.objectStore('papers');
+                const index = store.index('authors');
+                const results = [];
+
+                return new Promise((resolve) => {
+                    index.openCursor(IDBKeyRange.only(authorName)).onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        if (cursor) {
+                            results.push(cursor.value);
+                            cursor.continue();
+                        } else {
+                            resolve(results);
+                        }
+                    };
+                });
+            }
+
+            async getPapersByCategory(category) {
+                const tx = this.db.transaction('papers', 'readonly');
+                const store = tx.objectStore('papers');
+                const index = store.index('categories');
+                const results = [];
+
+                return new Promise((resolve) => {
+                    index.openCursor(IDBKeyRange.only(category)).onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        if (cursor) {
+                            results.push(cursor.value);
+                            cursor.continue();
+                        } else {
+                            resolve(results);
+                        }
+                    };
+                });
+            }
+
+            async getAllAuthors() {
+                const tx = this.db.transaction('authors', 'readonly');
+                const store = tx.objectStore('authors');
+                return store.getAll();
+            }
+
+            async getAllCategories() {
+                const tx = this.db.transaction('categories', 'readonly');
+                const store = tx.objectStore('categories');
+                return store.getAll();
+            }
+
+            async getStats() {
+                const papersTx = this.db.transaction('papers', 'readonly');
+                const papersCount = await papersTx.objectStore('papers').count();
+
+                const authorsTx = this.db.transaction('authors', 'readonly');
+                const authorsCount = await authorsTx.objectStore('authors').count();
+
+                return {
+                    papers: await new Promise(r => papersCount.onsuccess = () => r(papersCount.result)),
+                    authors: await new Promise(r => authorsCount.onsuccess = () => r(authorsCount.result))
+                };
+            }
+
+            async clear() {
+                const tx = this.db.transaction(['papers', 'authors', 'categories'], 'readwrite');
+                tx.objectStore('papers').clear();
+                tx.objectStore('authors').clear();
+                tx.objectStore('categories').clear();
+                return new Promise((resolve) => {
+                    tx.oncomplete = resolve;
+                });
+            }
+        }
+
+        // ============================================
+        // arXiv API Module
+        // ============================================
+        class ArxivAPI {
+            constructor() {
+                this.baseUrl = 'https://export.arxiv.org/api/query';
+                this.proxyUrl = 'https://api.allorigins.win/raw?url=';
+                this.requestQueue = [];
+                this.isProcessing = false;
+                this.rateLimit = 3000; // 3 seconds between requests
+            }
+
+            async search(query, start = 0, maxResults = 20) {
+                const params = new URLSearchParams({
+                    search_query: `all:${query}`,
+                    start: start.toString(),
+                    max_results: maxResults.toString(),
+                    sortBy: 'relevance',
+                    sortOrder: 'descending'
+                });
+
+                return this.queueRequest(`${this.baseUrl}?${params}`);
+            }
+
+            async getByCategory(category, maxResults = 50) {
+                const params = new URLSearchParams({
+                    search_query: `cat:${category}`,
+                    max_results: maxResults.toString(),
+                    sortBy: 'submittedDate',
+                    sortOrder: 'descending'
+                });
+
+                return this.queueRequest(`${this.baseUrl}?${params}`);
+            }
+
+            async getById(id) {
+                const params = new URLSearchParams({
+                    id_list: id
+                });
+
+                return this.queueRequest(`${this.baseUrl}?${params}`);
+            }
+
+            queueRequest(url) {
+                return new Promise((resolve, reject) => {
+                    this.requestQueue.push({ url, resolve, reject });
+                    this.processQueue();
+                });
+            }
+
+            async processQueue() {
+                if (this.isProcessing || this.requestQueue.length === 0) return;
+
+                this.isProcessing = true;
+                const { url, resolve, reject } = this.requestQueue.shift();
+
+                try {
+                    // Use CORS proxy to bypass browser restrictions
+                    const proxiedUrl = this.proxyUrl + encodeURIComponent(url);
+                    const response = await fetch(proxiedUrl);
+                    const text = await response.text();
+                    const papers = this.parseAtomFeed(text);
+                    resolve(papers);
+                } catch (error) {
+                    reject(error);
+                }
+
+                setTimeout(() => {
+                    this.isProcessing = false;
+                    this.processQueue();
+                }, this.rateLimit);
+            }
+
+            parseAtomFeed(xml) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(xml, 'text/xml');
+                const entries = doc.querySelectorAll('entry');
+
+                return Array.from(entries).map(entry => {
+                    const id = entry.querySelector('id')?.textContent?.split('/abs/')[1] || '';
+                    const title = entry.querySelector('title')?.textContent?.replace(/\s+/g, ' ').trim() || '';
+                    const summary = entry.querySelector('summary')?.textContent?.trim() || '';
+                    const published = entry.querySelector('published')?.textContent || '';
+
+                    const authors = Array.from(entry.querySelectorAll('author name'))
+                        .map(n => n.textContent);
+
+                    const categories = Array.from(entry.querySelectorAll('category'))
+                        .map(c => c.getAttribute('term'))
+                        .filter(Boolean);
+
+                    const links = Array.from(entry.querySelectorAll('link'));
+                    const pdfLink = links.find(l => l.getAttribute('title') === 'pdf')?.getAttribute('href');
+
+                    return {
+                        id,
+                        title,
+                        abstract: summary,
+                        authors,
+                        categories,
+                        year: published ? parseInt(published.slice(0, 4)) : null,
+                        pdfUrl: pdfLink,
+                        citations: [],
+                        references: []
+                    };
+                });
+            }
+        }
+
+        // ============================================
+        // Graph Visualization Engine
+        // ============================================
+        class GraphEngine {
+            constructor(container) {
+                this.container = container;
+                this.svg = d3.select('#graphSvg');
+                this.width = container.clientWidth;
+                this.height = container.clientHeight;
+
+                this.nodes = [];
+                this.links = [];
+                this.simulation = null;
+                this.selectedNode = null;
+                this.currentView = 'citations';
+
+                this.setupSvg();
+                this.setupZoom();
+                this.setupResize();
+            }
+
+            setupSvg() {
+                this.svg.attr('viewBox', [0, 0, this.width, this.height]);
+
+                // Create groups for links and nodes
+                this.g = this.svg.append('g');
+                this.linksGroup = this.g.append('g').attr('class', 'links');
+                this.nodesGroup = this.g.append('g').attr('class', 'nodes');
+
+                // Arrow marker for directed edges
+                this.svg.append('defs').append('marker')
+                    .attr('id', 'arrowhead')
+                    .attr('viewBox', '-0 -5 10 10')
+                    .attr('refX', 20)
+                    .attr('refY', 0)
+                    .attr('orient', 'auto')
+                    .attr('markerWidth', 6)
+                    .attr('markerHeight', 6)
+                    .append('path')
+                    .attr('d', 'M 0,-5 L 10,0 L 0,5')
+                    .attr('fill', '#2a2a2a');
+            }
+
+            setupZoom() {
+                this.zoom = d3.zoom()
+                    .scaleExtent([0.1, 4])
+                    .on('zoom', (event) => {
+                        this.g.attr('transform', event.transform);
+                    });
+
+                this.svg.call(this.zoom);
+            }
+
+            setupResize() {
+                const resizeObserver = new ResizeObserver(() => {
+                    this.width = this.container.clientWidth;
+                    this.height = this.container.clientHeight;
+                    this.svg.attr('viewBox', [0, 0, this.width, this.height]);
+
+                    if (this.simulation) {
+                        this.simulation.force('center', d3.forceCenter(this.width / 2, this.height / 2));
+                        this.simulation.alpha(0.3).restart();
+                    }
+                });
+
+                resizeObserver.observe(this.container);
+            }
+
+            setView(view) {
+                this.currentView = view;
+            }
+
+            setData(nodes, links) {
+                this.nodes = nodes;
+                this.links = links;
+                this.render();
+            }
+
+            render() {
+                // Stop existing simulation
+                if (this.simulation) {
+                    this.simulation.stop();
+                }
+
+                // Create simulation
+                this.simulation = d3.forceSimulation(this.nodes)
+                    .force('link', d3.forceLink(this.links)
+                        .id(d => d.id)
+                        .distance(100))
+                    .force('charge', d3.forceManyBody()
+                        .strength(-200))
+                    .force('center', d3.forceCenter(this.width / 2, this.height / 2))
+                    .force('collision', d3.forceCollide().radius(d => this.getNodeRadius(d) + 5));
+
+                // Render links
+                const linkSelection = this.linksGroup.selectAll('.link')
+                    .data(this.links, d => `${d.source.id || d.source}-${d.target.id || d.target}`);
+
+                linkSelection.exit().remove();
+
+                const linkEnter = linkSelection.enter()
+                    .append('line')
+                    .attr('class', 'link')
+                    .attr('marker-end', this.currentView === 'citations' ? 'url(#arrowhead)' : null);
+
+                const link = linkEnter.merge(linkSelection);
+
+                // Render nodes
+                const nodeSelection = this.nodesGroup.selectAll('.node')
+                    .data(this.nodes, d => d.id);
+
+                nodeSelection.exit().remove();
+
+                const nodeEnter = nodeSelection.enter()
+                    .append('g')
+                    .attr('class', 'node')
+                    .call(this.drag())
+                    .on('click', (event, d) => this.onNodeClick(d))
+                    .on('mouseenter', (event, d) => this.onNodeHover(event, d))
+                    .on('mouseleave', () => this.onNodeLeave());
+
+                nodeEnter.append('circle')
+                    .attr('r', d => this.getNodeRadius(d))
+                    .attr('fill', d => this.getNodeColor(d));
+
+                nodeEnter.append('text')
+                    .attr('dy', d => this.getNodeRadius(d) + 12)
+                    .attr('text-anchor', 'middle')
+                    .text(d => this.getNodeLabel(d));
+
+                const node = nodeEnter.merge(nodeSelection);
+
+                // Update node appearance
+                node.select('circle')
+                    .attr('r', d => this.getNodeRadius(d))
+                    .attr('fill', d => this.getNodeColor(d));
+
+                node.select('text')
+                    .attr('dy', d => this.getNodeRadius(d) + 12)
+                    .text(d => this.getNodeLabel(d));
+
+                // Simulation tick
+                this.simulation.on('tick', () => {
+                    link
+                        .attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
+
+                    node.attr('transform', d => `translate(${d.x},${d.y})`);
+                });
+
+                // Update counts
+                document.getElementById('nodeCount').textContent = `${this.nodes.length} nodes`;
+                document.getElementById('edgeCount').textContent = `${this.links.length} edges`;
+            }
+
+            getNodeRadius(d) {
+                if (this.currentView === 'citations') {
+                    return Math.max(6, Math.min(20, 6 + (d.citationCount || 0) / 2));
+                } else if (this.currentView === 'authors') {
+                    return Math.max(6, Math.min(25, 6 + (d.paperCount || 0)));
+                } else {
+                    return Math.max(8, Math.min(30, 8 + Math.sqrt(d.paperCount || 0) * 2));
+                }
+            }
+
+            getNodeColor(d) {
+                if (this.currentView === 'citations') {
+                    return '#4a9eff';
+                } else if (this.currentView === 'authors') {
+                    return '#ff6b6b';
+                } else {
+                    return '#4ecdc4';
+                }
+            }
+
+            getNodeLabel(d) {
+                if (this.currentView === 'citations') {
+                    return d.title?.slice(0, 25) + (d.title?.length > 25 ? '...' : '') || d.id;
+                } else if (this.currentView === 'authors') {
+                    return d.name?.split(' ').pop() || d.id;
+                } else {
+                    return d.name || d.id;
+                }
+            }
+
+            drag() {
+                return d3.drag()
+                    .on('start', (event, d) => {
+                        if (!event.active) this.simulation.alphaTarget(0.3).restart();
+                        d.fx = d.x;
+                        d.fy = d.y;
+                    })
+                    .on('drag', (event, d) => {
+                        d.fx = event.x;
+                        d.fy = event.y;
+                    })
+                    .on('end', (event, d) => {
+                        if (!event.active) this.simulation.alphaTarget(0);
+                        d.fx = null;
+                        d.fy = null;
+                    });
+            }
+
+            onNodeClick(d) {
+                // Deselect previous
+                this.nodesGroup.selectAll('.node').classed('selected', false);
+
+                // Select new
+                this.selectedNode = d;
+                this.nodesGroup.selectAll('.node')
+                    .filter(n => n.id === d.id)
+                    .classed('selected', true);
+
+                // Highlight connected links
+                this.linksGroup.selectAll('.link')
+                    .classed('highlighted', l =>
+                        l.source.id === d.id || l.target.id === d.id ||
+                        l.source === d.id || l.target === d.id);
+
+                // Emit event
+                this.container.dispatchEvent(new CustomEvent('nodeselect', { detail: d }));
+            }
+
+            onNodeHover(event, d) {
+                const tooltip = document.getElementById('tooltip');
+                let content = '';
+
+                if (this.currentView === 'citations') {
+                    content = `<strong>${d.title}</strong><br>${d.authors?.slice(0, 3).join(', ')}${d.authors?.length > 3 ? '...' : ''}`;
+                } else if (this.currentView === 'authors') {
+                    content = `<strong>${d.name}</strong><br>${d.paperCount} papers`;
+                } else {
+                    content = `<strong>${d.name}</strong><br>${d.paperCount} papers`;
+                }
+
+                tooltip.innerHTML = content;
+                tooltip.style.left = (event.pageX + 10) + 'px';
+                tooltip.style.top = (event.pageY + 10) + 'px';
+                tooltip.classList.add('visible');
+            }
+
+            onNodeLeave() {
+                document.getElementById('tooltip').classList.remove('visible');
+            }
+
+            zoomIn() {
+                this.svg.transition().duration(300).call(this.zoom.scaleBy, 1.3);
+            }
+
+            zoomOut() {
+                this.svg.transition().duration(300).call(this.zoom.scaleBy, 0.7);
+            }
+
+            resetView() {
+                this.svg.transition().duration(500).call(
+                    this.zoom.transform,
+                    d3.zoomIdentity
+                );
+            }
+
+            exportPNG() {
+                const svgElement = this.svg.node();
+                const serializer = new XMLSerializer();
+                const svgString = serializer.serializeToString(svgElement);
+
+                const canvas = document.createElement('canvas');
+                canvas.width = this.width * 2;
+                canvas.height = this.height * 2;
+                const ctx = canvas.getContext('2d');
+                ctx.scale(2, 2);
+                ctx.fillStyle = '#0a0a0a';
+                ctx.fillRect(0, 0, this.width, this.height);
+
+                const img = new Image();
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0);
+                    const link = document.createElement('a');
+                    link.download = 'research-graph.png';
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                };
+                img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
+            }
+        }
+
+        // ============================================
+        // Main Application
+        // ============================================
+        class App {
+            constructor() {
+                this.dataStore = new DataStore();
+                this.arxivAPI = new ArxivAPI();
+                this.graphEngine = null;
+                this.currentView = 'citations';
+                this.papers = [];
+
+                this.init();
+            }
+
+            async init() {
+                await this.dataStore.init();
+
+                this.graphEngine = new GraphEngine(document.getElementById('graphContainer'));
+
+                this.setupEventListeners();
+                this.updateStatus('Ready');
+
+                // Check if we have existing data
+                const stats = await this.dataStore.getStats();
+                if (stats.papers > 0) {
+                    this.hideEmptyState();
+                    this.loadViewData();
+                }
+            }
+
+            setupEventListeners() {
+                // View tabs
+                document.querySelectorAll('.view-tab').forEach(tab => {
+                    tab.addEventListener('click', () => {
+                        document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+                        tab.classList.add('active');
+                        this.currentView = tab.dataset.view;
+                        this.graphEngine.setView(this.currentView);
+                        this.loadViewData();
+                    });
+                });
+
+                // Search
+                let searchTimeout;
+                document.getElementById('searchInput').addEventListener('input', (e) => {
+                    clearTimeout(searchTimeout);
+                    searchTimeout = setTimeout(() => this.search(e.target.value), 300);
+                });
+
+                // Graph controls
+                document.getElementById('zoomInBtn').addEventListener('click', () => this.graphEngine.zoomIn());
+                document.getElementById('zoomOutBtn').addEventListener('click', () => this.graphEngine.zoomOut());
+                document.getElementById('resetBtn').addEventListener('click', () => this.graphEngine.resetView());
+                document.getElementById('exportBtn').addEventListener('click', () => this.graphEngine.exportPNG());
+
+                // Load sample button
+                document.getElementById('loadSampleBtn').addEventListener('click', () => this.loadSampleData());
+
+                // Node selection
+                document.getElementById('graphContainer').addEventListener('nodeselect', (e) => {
+                    this.showDetail(e.detail);
+                });
+            }
+
+            async search(query) {
+                if (!query || query.length < 2) {
+                    this.loadViewData();
+                    return;
+                }
+
+                this.showLoading('Searching...');
+
+                try {
+                    // Search local first
+                    let results = await this.dataStore.searchPapers(query);
+
+                    // If not enough results, search API
+                    if (results.length < 10) {
+                        this.updateStatus('Searching arXiv...');
+                        const apiResults = await this.arxivAPI.search(query, 0, 30);
+
+                        // Store new results
+                        if (apiResults.length > 0) {
+                            await this.dataStore.addPapers(apiResults);
+                            results = [...results, ...apiResults];
+                        }
+                    }
+
+                    this.papers = results;
+                    this.buildGraphFromPapers(results);
+                    this.hideLoading();
+                    this.hideEmptyState();
+                    this.updateStatus(`Found ${results.length} papers`);
+                } catch (error) {
+                    console.error('Search error:', error);
+                    this.hideLoading();
+                    this.updateStatus('Search failed', true);
+                }
+            }
+
+            async loadViewData() {
+                const stats = await this.dataStore.getStats();
+                if (stats.papers === 0) return;
+
+                this.showLoading('Loading...');
+
+                try {
+                    if (this.currentView === 'citations') {
+                        const papers = await this.dataStore.searchPapers('', 100);
+                        this.papers = papers;
+                        this.buildGraphFromPapers(papers);
+                    } else if (this.currentView === 'authors') {
+                        await this.buildAuthorGraph();
+                    } else {
+                        await this.buildTopicGraph();
+                    }
+
+                    this.hideLoading();
+                } catch (error) {
+                    console.error('Load error:', error);
+                    this.hideLoading();
+                    this.updateStatus('Load failed', true);
+                }
+            }
+
+            buildGraphFromPapers(papers) {
+                const nodes = papers.map(p => ({
+                    id: p.id,
+                    title: p.title,
+                    authors: p.authors,
+                    categories: p.categories,
+                    year: p.year,
+                    abstract: p.abstract,
+                    citationCount: p.citations?.length || 0,
+                    type: 'paper'
+                }));
+
+                const nodeIds = new Set(nodes.map(n => n.id));
+                const links = [];
+
+                // Build citation links
+                papers.forEach(paper => {
+                    (paper.citations || []).forEach(citedId => {
+                        if (nodeIds.has(citedId)) {
+                            links.push({ source: paper.id, target: citedId });
+                        }
+                    });
+                    (paper.references || []).forEach(refId => {
+                        if (nodeIds.has(refId)) {
+                            links.push({ source: refId, target: paper.id });
+                        }
+                    });
+                });
+
+                // If no citation links, create connections based on shared authors/categories
+                if (links.length === 0 && papers.length > 1) {
+                    for (let i = 0; i < papers.length; i++) {
+                        for (let j = i + 1; j < papers.length; j++) {
+                            const p1 = papers[i];
+                            const p2 = papers[j];
+
+                            // Connect if shared author
+                            const sharedAuthors = p1.authors?.filter(a => p2.authors?.includes(a));
+                            if (sharedAuthors?.length > 0) {
+                                links.push({ source: p1.id, target: p2.id });
+                            }
+                            // Or shared category
+                            else {
+                                const sharedCats = p1.categories?.filter(c => p2.categories?.includes(c));
+                                if (sharedCats?.length > 0 && Math.random() < 0.3) {
+                                    links.push({ source: p1.id, target: p2.id });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                this.graphEngine.setData(nodes, links);
+            }
+
+            async buildAuthorGraph() {
+                const authors = await this.dataStore.getAllAuthors();
+                const topAuthors = authors
+                    .sort((a, b) => b.paperCount - a.paperCount)
+                    .slice(0, 80);
+
+                const nodes = topAuthors.map(a => ({
+                    id: a.name,
+                    name: a.name,
+                    paperCount: a.paperCount,
+                    type: 'author'
+                }));
+
+                // Build collaboration links
+                const links = [];
+                const authorNames = new Set(nodes.map(n => n.name));
+
+                for (const author of topAuthors) {
+                    const papers = await this.dataStore.getPapersByAuthor(author.name);
+
+                    for (const paper of papers) {
+                        for (const coauthor of paper.authors) {
+                            if (coauthor !== author.name && authorNames.has(coauthor)) {
+                                // Avoid duplicate links
+                                const existing = links.find(l =>
+                                    (l.source === author.name && l.target === coauthor) ||
+                                    (l.source === coauthor && l.target === author.name)
+                                );
+                                if (!existing) {
+                                    links.push({ source: author.name, target: coauthor });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                this.graphEngine.setData(nodes, links);
+            }
+
+            async buildTopicGraph() {
+                const categories = await this.dataStore.getAllCategories();
+
+                const nodes = categories
+                    .sort((a, b) => b.paperCount - a.paperCount)
+                    .slice(0, 40)
+                    .map(c => ({
+                        id: c.id,
+                        name: c.name || c.id,
+                        paperCount: c.paperCount,
+                        type: 'category'
+                    }));
+
+                // Build cross-category links based on papers that span categories
+                const links = [];
+                const catIds = new Set(nodes.map(n => n.id));
+                const linkCounts = {};
+
+                for (const cat of nodes) {
+                    const papers = await this.dataStore.getPapersByCategory(cat.id);
+
+                    for (const paper of papers) {
+                        for (const otherCat of paper.categories) {
+                            if (otherCat !== cat.id && catIds.has(otherCat)) {
+                                const key = [cat.id, otherCat].sort().join('|');
+                                linkCounts[key] = (linkCounts[key] || 0) + 1;
+                            }
+                        }
+                    }
+                }
+
+                // Create links for categories that share papers
+                for (const [key, count] of Object.entries(linkCounts)) {
+                    if (count >= 2) {
+                        const [source, target] = key.split('|');
+                        links.push({ source, target, weight: count });
+                    }
+                }
+
+                this.graphEngine.setData(nodes, links);
+            }
+
+            async loadSampleData() {
+                this.showLoading('Fetching sample data from arXiv...');
+
+                try {
+                    // Fetch recent ML papers
+                    const papers = await this.arxivAPI.getByCategory('cs.LG', 50);
+
+                    if (papers.length > 0) {
+                        await this.dataStore.addPapers(papers);
+                        this.hideLoading();
+                        this.hideEmptyState();
+                        this.loadViewData();
+                        this.updateStatus(`Loaded ${papers.length} papers`);
+                    } else {
+                        throw new Error('No papers returned');
+                    }
+                } catch (error) {
+                    console.error('Sample data error:', error);
+                    this.hideLoading();
+                    this.updateStatus('Failed to fetch sample data', true);
+                }
+            }
+
+            showDetail(node) {
+                const content = document.getElementById('detailContent');
+                const empty = document.getElementById('detailEmpty');
+
+                empty.style.display = 'none';
+                content.classList.add('visible');
+
+                if (this.currentView === 'citations') {
+                    this.showPaperDetail(node);
+                } else if (this.currentView === 'authors') {
+                    this.showAuthorDetail(node);
+                } else {
+                    this.showCategoryDetail(node);
+                }
+            }
+
+            showPaperDetail(paper) {
+                document.getElementById('detailType').textContent = 'Paper';
+                document.getElementById('detailTitle').textContent = paper.title;
+                document.getElementById('detailMeta').textContent = `${paper.year || 'Unknown year'} • ${paper.categories?.join(', ') || 'No categories'}`;
+
+                document.getElementById('abstractSection').style.display = 'block';
+                document.getElementById('detailAbstract').textContent = paper.abstract || 'No abstract available';
+
+                document.getElementById('authorsSection').style.display = 'block';
+                const authorsContainer = document.getElementById('detailAuthors');
+                authorsContainer.innerHTML = (paper.authors || []).map(author =>
+                    `<div class="detail-author" data-author="${author}">${author}</div>`
+                ).join('');
+
+                // Author click handler
+                authorsContainer.querySelectorAll('.detail-author').forEach(el => {
+                    el.addEventListener('click', () => {
+                        document.querySelector('[data-view="authors"]').click();
+                        setTimeout(() => {
+                            this.search(el.dataset.author);
+                        }, 100);
+                    });
+                });
+
+                document.getElementById('categoriesSection').style.display = 'block';
+                document.getElementById('detailCategories').innerHTML = (paper.categories || []).map(cat =>
+                    `<span class="detail-tag">${cat}</span>`
+                ).join('');
+
+                document.getElementById('connectionsSection').style.display = 'none';
+
+                document.getElementById('linkSection').style.display = 'block';
+                document.getElementById('detailLink').href = `https://arxiv.org/abs/${paper.id}`;
+            }
+
+            async showAuthorDetail(author) {
+                document.getElementById('detailType').textContent = 'Author';
+                document.getElementById('detailTitle').textContent = author.name;
+                document.getElementById('detailMeta').textContent = `${author.paperCount} papers`;
+
+                document.getElementById('abstractSection').style.display = 'none';
+                document.getElementById('authorsSection').style.display = 'none';
+                document.getElementById('categoriesSection').style.display = 'none';
+
+                document.getElementById('connectionsSection').style.display = 'block';
+                document.getElementById('connectionsSectionTitle').textContent = 'Papers';
+
+                const papers = await this.dataStore.getPapersByAuthor(author.name);
+                const connectionsContainer = document.getElementById('detailConnections');
+                connectionsContainer.innerHTML = papers.slice(0, 10).map(paper =>
+                    `<div class="detail-connection" data-paper="${paper.id}">
+                        <span>${paper.title.slice(0, 40)}${paper.title.length > 40 ? '...' : ''}</span>
+                        <span class="detail-connection-count">${paper.year || ''}</span>
+                    </div>`
+                ).join('');
+
+                document.getElementById('linkSection').style.display = 'none';
+            }
+
+            async showCategoryDetail(category) {
+                document.getElementById('detailType').textContent = 'Category';
+                document.getElementById('detailTitle').textContent = category.name;
+                document.getElementById('detailMeta').textContent = `${category.paperCount} papers`;
+
+                document.getElementById('abstractSection').style.display = 'none';
+                document.getElementById('authorsSection').style.display = 'none';
+                document.getElementById('categoriesSection').style.display = 'none';
+
+                document.getElementById('connectionsSection').style.display = 'block';
+                document.getElementById('connectionsSectionTitle').textContent = 'Recent Papers';
+
+                const papers = await this.dataStore.getPapersByCategory(category.id);
+                const connectionsContainer = document.getElementById('detailConnections');
+                connectionsContainer.innerHTML = papers.slice(0, 10).map(paper =>
+                    `<div class="detail-connection" data-paper="${paper.id}">
+                        <span>${paper.title.slice(0, 40)}${paper.title.length > 40 ? '...' : ''}</span>
+                        <span class="detail-connection-count">${paper.year || ''}</span>
+                    </div>`
+                ).join('');
+
+                document.getElementById('linkSection').style.display = 'none';
+            }
+
+            hideEmptyState() {
+                document.getElementById('emptyState').classList.add('hidden');
+            }
+
+            showLoading(text = 'Loading...') {
+                document.getElementById('loadingText').textContent = text;
+                document.getElementById('loadingOverlay').classList.add('visible');
+            }
+
+            hideLoading() {
+                document.getElementById('loadingOverlay').classList.remove('visible');
+            }
+
+            updateStatus(text, isError = false) {
+                document.getElementById('statusText').textContent = text;
+                document.getElementById('statusDot').classList.toggle('offline', isError);
+            }
+        }
+
+        // Initialize app
+        const app = new App();
+    </script>
+</body>
+</html>
